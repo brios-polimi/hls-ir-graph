@@ -1,0 +1,20 @@
+[project]
+name = "hls-ir-graph"
+version = "0.1.0"
+description = "Backend-aware HLS project to LLVM CDFG/ProGraML preprocessing"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.scripts]
+hls-project-to-graph = "hls_ir_graph.cli:main"
+
+[project.optional-dependencies]
+fast-json = ["orjson"]
+dev = []
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

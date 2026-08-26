@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+
+# Generated project and graph artifacts belong outside the source tree.
+artifacts/
+*.ll
+*.bc
+*.pragmas.log
+*.compiler.log
+*.provenance.json
