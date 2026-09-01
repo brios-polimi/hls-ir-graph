@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -12,7 +13,14 @@ from pathlib import Path
 
 from ..config import PreprocessConfig
 from .base import CompileResult
-from .common import remove_generated_weight_initializers, run_command, strip_nonsemantic_metadata
+from .common import (
+    collapse_static_initializers,
+    compact_zero_weight_initializers,
+    remove_generated_weight_initializers,
+    run_command,
+    strip_nonsemantic_metadata,
+)
+from .debug_types import recover_debug_types
 
 
 _LINE_MARKER = re.compile(r'^#\s+(?P<line>\d+)\s+"(?P<path>[^"]+)"')
@@ -61,8 +69,7 @@ def bambu_args(project_dir: Path) -> list[str]:
             f"Bambu ac_types directory not found: {ac_types}. Generate the project with the hls4ml Bambu writer first."
         )
     return [
-        "-std=c++14", "-D__NO_INLINE__", "-D__SYNTHESIS__", "-D__BAMBU__",
-        f"-I{ac_types}", "-ftemplate-depth=2048", "-m64",
+        "-D__SYNTHESIS__", "-D__BAMBU__", f"-I{ac_types}",
     ]
 
 
@@ -81,38 +88,63 @@ class BambuFrontend:
         if not clang or not Path(clang).is_file():
             raise FileNotFoundError(f"Bambu-compatible Clang not found: {configured}")
         args = bambu_args(project_dir)
+        # Keep the source-language policy consistent across preprocessing and
+        # codegen. These affect semantics, not just optimization heuristics.
+        language = ["-std=c++14", "-fno-exceptions", "-fno-threadsafe-statics",
+                    "-fwrapv", "-ffp-contract=off", "-m64"]
+        debug_llvm = llvm_path.with_suffix(".debug.ll")
+        type_table = llvm_path.with_suffix(".types.json")
         commands: list[tuple[str, ...]] = []
         with tempfile.TemporaryDirectory(prefix="bambu-ir-", dir=llvm_path.parent) as temp:
             work = Path(temp)
             preprocessed = work / "source.pp.cpp"
             raw_ll = work / "source.ll"
-            preprocess_command = [clang, str(source), "-E", *args, "-o", str(preprocessed)]
+            preprocess_command = [clang, str(source), "-E", *args, *language, "-o", str(preprocessed)]
             commands.append(tuple(preprocess_command))
             preprocess = run_command(preprocess_command, cwd=project_dir, timeout=config.compiler_timeout_seconds, stage="Bambu preprocessing")
             directives = extract_source_directives(preprocessed, backend="bambu")
             directives_path.write_text("".join(json.dumps(asdict(record), sort_keys=True) + "\n" for record in directives))
-            remove_generated_weight_initializers(preprocessed)
+            weight_names: set[str] = set()
+            remove_generated_weight_initializers(preprocessed, weight_names=weight_names)
             compile_command = [
-                clang, str(preprocessed), "-S", "-emit-llvm", *args,
+                clang, str(preprocessed), "-S", "-emit-llvm", *language,
                 "-Xclang", "-no-opaque-pointers", "-Wno-unknown-pragmas",
-                "-Wno-tautological-compare", "-O2", "-fno-builtin-bcmp",
-                "-fno-builtin-memcpy", "-fno-builtin-memmove", "-fno-builtin-memset",
-                "-fno-exceptions", "-ffp-contract=off", "-finline-functions",
-                "-fno-slp-vectorize", "-fno-stack-protector", "-fno-threadsafe-statics",
-                "-fno-unroll-loops", "-fno-use-cxa-atexit", "-fno-vectorize",
-                "-fwrapv", "-o", str(raw_ll),
+                # Even -O0 normally runs always-inline passes. Capture the
+                # frontend module before those can erase debug associations.
+                "-O0", "-Xclang", "-disable-llvm-passes",
+                # Do not make later explicitly configured transforms no-ops.
+                "-Xclang", "-disable-O0-optnone",
+                "-g", "-fstandalone-debug", "-ftemplate-depth=2048",
+                "-o", str(raw_ll),
             ]
             commands.append(tuple(compile_command))
             compiled = run_command(compile_command, cwd=project_dir, timeout=config.compiler_timeout_seconds, stage="Bambu LLVM emission")
             compiler_log.write_text(preprocess.stderr + preprocess.stdout + compiled.stderr + compiled.stdout)
             if not raw_ll.is_file() or not raw_ll.stat().st_size:
                 raise RuntimeError("Bambu LLVM emission produced no textual IR")
-            llvm_path.write_text(strip_nonsemantic_metadata(raw_ll.read_text()))
+            raw = raw_ll.read_text()
+            debug_llvm.write_text(raw)
+            ir, table = recover_debug_types(raw)
+            table['debug_llvm'] = str(debug_llvm)
+            table['debug_llvm_sha256'] = hashlib.sha256(raw.encode()).hexdigest()
+            table['stage'] = 'frontend_before_configured_ir_transforms'
+            type_table.write_text(json.dumps(table, indent=2) + "\n")
+            commands.append(("debug-type-recovery-v1", str(debug_llvm), str(type_table)))
+            if config.bambu.require_complete_ac_types and not table['complete_ac_mapping']:
+                raise RuntimeError(
+                    f"Incomplete AC debug type mapping: {table['mapped_ac_type_count']}/"
+                    f"{table['ac_type_count']}; inspect {type_table}"
+                )
+            ir = strip_nonsemantic_metadata(ir)
+            ir = collapse_static_initializers(ir)
+            llvm_path.write_text(compact_zero_weight_initializers(ir, weight_names))
         version = subprocess.run([clang, "--version"], capture_output=True, text=True, check=False).stdout.splitlines()
         return CompileResult(
             llvm_path, directives_path, compiler_log, tuple(commands),
             "source_requested", "portable_clang_approximation", version[0] if version else None,
-            "Bambu custom Clang plugins and internal lowering passes are not applied",
+            "Bambu custom Clang plugins and internal lowering passes are not applied; "
+            "LLVM record names recovered from debug metadata before optimization",
+            type_table=type_table, debug_llvm=debug_llvm,
         )
 
 

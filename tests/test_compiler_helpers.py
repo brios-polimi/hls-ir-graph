@@ -4,6 +4,7 @@ from pathlib import Path
 
 from hls_ir_graph.frontends.common import (
     _collapse_static_initializers,
+    _compact_zero_weight_initializers,
     _failure_detail,
     _remove_generated_weight_initializers,
     _strip_nonsemantic_metadata,
@@ -71,6 +72,17 @@ class CompilerHelperTests(unittest.TestCase):
             _strip_nonsemantic_metadata(ir),
             "  %1 = add i32 %a, %b\n",
         )
+
+    def test_compacts_only_removed_weight_globals(self):
+        ir = (
+            '@w2 = dso_local global [3 x { i10, [6 x i8] }] '
+            '[{ i10 0, [6 x i8] undef }, { i10 0, [6 x i8] undef }, '
+            '{ i10 0, [6 x i8] undef }]\n'
+            '@lookup = dso_local global [2 x i8] [i8 4, i8 5]\n'
+        )
+        compacted = _compact_zero_weight_initializers(ir, {"w2"})
+        self.assertIn("@w2 = dso_local global [3 x { i10, [6 x i8] }] zeroinitializer", compacted)
+        self.assertIn("@lookup = dso_local global [2 x i8] [i8 4, i8 5]", compacted)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,46 @@
 # Compilation audit
 
+## Follow-up: debug type recovery and flag reduction (2026-08-31)
+
+The historical audit below describes an earlier pipeline. Current changes were
+checked on one written Vitis source from each of the selected 2layer and conv2d
+archives, with all experimental outputs outside the dataset.
+
+| Source ID | Baseline normalized LLVM lines | Reduced flags | Project AP headers first |
+| --- | ---: | --- | --- |
+| `0162624c-ca32-4e05-a8be-48c9d355ef4b` (2layer) | 3,221 | Identical LLVM | Preprocessing error |
+| `00dc820c-b275-4dcd-b439-64e13df52c55` (conv2d) | 37,329 | Identical LLVM | Preprocessing error |
+
+The comparison applies the same existing weight/metadata cleanup and ignores
+only ModuleID/source-filename paths. The reduced Vitis arguments keep `-fhls`,
+the FPGA target, `-fno-threadsafe-statics`, `__VITIS_HLS__`, and the vendor header
+include. `-fhls` itself defines `AESL_SYN`, `__SYNTHESIS__`, and `__HLS_SYN__` and
+disables exceptions. It does not define `__VITIS_HLS__`, so that backend marker
+is retained for source conditionals even though these samples do not need it.
+
+Removed: redundant synthesis macro definitions, `-fno-exceptions`,
+`-fno-math-errno`, `-fno-use-cxa-atexit`, `ap_sysc`/project `ap_types` includes,
+and the forced `autopilot_ssdm_op.h` include. The old eight-family audit also
+found the removed includes/defines redundant; the static-guard flag is retained
+because that audit showed a real conv2d difference.
+
+**Do not put the archived open-source AP headers first for Vitis HLS.** Both
+selected projects contain an explicit `#error` in `ap_types/ap_common.h`:
+"The open-source version of AP types does not support synthesis." The vendor
+autopilot headers provide the compiler's synthesis implementation. Header
+precedence is a semantic choice, not a portability cleanup.
+
+Bambu no longer mirrors a subset of HLS `-O2` flags. It captures unoptimized
+LLVM/debug associations, recovers record names, then builds graphs; see
+[DEBUG_TYPE_RECOVERY.md](DEBUG_TYPE_RECOVERY.md). No Vitis optimization level
+or weight policy was changed in this follow-up.
+
+Local evidence: `/tmp/hls-debug-vitis-audit/report.json`, with per-variant LLVM
+and diagnostics in the same directory. These samples validate the stated
+changes, not arbitrary projects or header versions.
+
+## Historical audit
+
 This document records a bounded audit of `pipeline/compiler.py`. It is intended
 to make compilation choices explicit before changing the generated LLVM dataset.
 The audit used one explicitly selected retained source snapshot from each kernel

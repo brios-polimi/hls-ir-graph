@@ -24,6 +24,8 @@ class ProjectArtifacts:
     compiler_log: Path
     graph: Path | None
     provenance: Path
+    type_table: Path | None = None
+    debug_llvm: Path | None = None
 
 
 def _write_json(path: Path, value: dict) -> None:
@@ -171,6 +173,8 @@ def preprocess_project(
         "compiler_version": result.compiler_version,
         "commands": [list(command) for command in result.commands],
         "ir_transforms": list(result.applied_transforms),
+        "type_table": str(result.type_table) if result.type_table else None,
+        "debug_llvm": str(result.debug_llvm) if result.debug_llvm else None,
     }
     _write_json(provenance_path, provenance)
     if graph_path is not None:
@@ -178,4 +182,5 @@ def preprocess_project(
             llvm, graph_path, directives, backend=backend, project_dir=project,
             config=cfg, provenance=provenance,
         )
-    return ProjectArtifacts(llvm, directives, compiler_log, graph_path, provenance_path)
+    return ProjectArtifacts(llvm, directives, compiler_log, graph_path, provenance_path,
+                            result.type_table, result.debug_llvm)

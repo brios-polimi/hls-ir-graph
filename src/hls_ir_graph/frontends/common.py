@@ -15,6 +15,7 @@ _LINE_MARKER = re.compile(r'(?m)^#\s+\d+\s+"(?P<path>[^"]+)"[^\n]*\n')
 _WEIGHT_INITIALIZER = re.compile(
     r"(?m)^(?P<declaration>[^\n;{}]*\[[^\n;{}]+\])\s*=\s*\{[^\n;]*\};"
 )
+_WEIGHT_NAME = re.compile(r"\b(?P<name>[A-Za-z_]\w*)\s*\[[^\n;{}]+\]\s*$")
 
 
 def failure_detail(output: str, limit: int = 1500) -> str:
@@ -38,7 +39,9 @@ def run_command(
     return result
 
 
-def remove_generated_weight_initializers(preprocessed: Path) -> int:
+def remove_generated_weight_initializers(
+    preprocessed: Path, *, weight_names: set[str] | None = None
+) -> int:
     text = preprocessed.read_text()
     markers = list(_LINE_MARKER.finditer(text))
     pieces: list[str] = []
@@ -51,6 +54,11 @@ def remove_generated_weight_initializers(preprocessed: Path) -> int:
         segment = text[start:end]
         source = Path(marker.group("path"))
         if source.suffix == ".h" and source.parent.name == "weights":
+            if weight_names is not None:
+                for declaration in _WEIGHT_INITIALIZER.finditer(segment):
+                    name = _WEIGHT_NAME.search(declaration.group("declaration"))
+                    if name:
+                        weight_names.add(name.group("name"))
             segment, removed = _WEIGHT_INITIALIZER.subn(
                 lambda match: f"{match.group('declaration').rstrip()};", segment
             )
@@ -60,6 +68,47 @@ def remove_generated_weight_initializers(preprocessed: Path) -> int:
     if count:
         preprocessed.write_text("".join(pieces))
     return count
+
+
+def compact_zero_weight_initializers(ir: str, weight_names: set[str]) -> str:
+    """Replace expanded zero globals for weight arrays with ``zeroinitializer``."""
+
+    if not weight_names:
+        return ir
+
+    compacted: list[str] = []
+    for line in ir.splitlines(keepends=True):
+        symbol = re.match(r"^@(?P<name>[A-Za-z_]\w*)\s*=", line)
+        if not symbol or symbol.group("name") not in weight_names:
+            compacted.append(line)
+            continue
+
+        global_match = re.search(r"\bglobal\s+", line)
+        if not global_match:
+            compacted.append(line)
+            continue
+        type_start = global_match.end()
+        if type_start >= len(line) or line[type_start] != "[":
+            compacted.append(line)
+            continue
+
+        depth = 0
+        type_end = None
+        for index in range(type_start, len(line)):
+            if line[index] == "[":
+                depth += 1
+            elif line[index] == "]":
+                depth -= 1
+                if depth == 0:
+                    type_end = index + 1
+                    break
+        if type_end is None or not line[type_end:].lstrip().startswith("["):
+            compacted.append(line)
+            continue
+
+        newline = "\n" if line.endswith("\n") else ""
+        compacted.append(line[:type_end] + " zeroinitializer" + newline)
+    return "".join(compacted)
 
 
 def collapse_static_initializers(ir: str) -> str:
@@ -84,5 +133,6 @@ def strip_nonsemantic_metadata(ir: str) -> str:
 # Compatibility aliases retained for migrated tests and downstream callers.
 _failure_detail = failure_detail
 _remove_generated_weight_initializers = remove_generated_weight_initializers
+_compact_zero_weight_initializers = compact_zero_weight_initializers
 _collapse_static_initializers = collapse_static_initializers
 _strip_nonsemantic_metadata = strip_nonsemantic_metadata

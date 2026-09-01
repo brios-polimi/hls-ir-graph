@@ -24,7 +24,7 @@ class VitisConfig:
 @dataclass
 class BambuConfig:
     clang: str = "clang-16"
-    mirror_optimization_flags: bool = True
+    require_complete_ac_types: bool = True
 
 
 @dataclass
@@ -85,6 +85,13 @@ class PreprocessConfig:
         unknown = set(data) - allowed
         if unknown:
             raise ValueError(f"Unknown preprocessing config keys: {sorted(unknown)}")
+        bambu = data.get("bambu", {})
+        removed = set(bambu) & {"architecture_xml", "mirror_optimization_flags"}
+        if removed:
+            raise ValueError(
+                f"Removed Bambu config keys: {sorted(removed)}. Remove them: "
+                "debug-derived type recovery now runs before LLVM optimization."
+            )
         return cls(
             source_file=data.get("source_file", cls.source_file),
             compiler_timeout_seconds=data.get(
@@ -92,7 +99,7 @@ class PreprocessConfig:
             ),
             programl=ProgramlConfig(**data.get("programl", {})),
             vitis=VitisConfig(**data.get("vitis", {})),
-            bambu=BambuConfig(**data.get("bambu", {})),
+            bambu=BambuConfig(**bambu),
             ir_transforms=data.get("ir_transforms", []),
         )
 

@@ -61,6 +61,10 @@ its plugins into Ubuntu Clang 16 and fail with undefined LLVM symbols.
 
 ## Verified result (2026-08-26)
 
+Historical result below used the old `-O2` portable frontend. The current
+frontend captures debug types before LLVM passes, so these graph counts are
+not expected to match. See [DEBUG_TYPE_RECOVERY.md](DEBUG_TYPE_RECOVERY.md).
+
 The preprocessing run completed with:
 
 - 566 LLVM lines using the portable subset of Bambu's optimization flags;

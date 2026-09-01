@@ -26,10 +26,10 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    config = PreprocessConfig.from_file(args.config) if args.config else PreprocessConfig()
-    if args.clang:
-        config.bambu.clang = args.clang
     try:
+        config = PreprocessConfig.from_file(args.config) if args.config else PreprocessConfig()
+        if args.clang:
+            config.bambu.clang = args.clang
         artifacts = preprocess_project(
             args.project_dir, args.output_dir, backend=args.backend,
             source_file=args.source, config=config, graph=not args.skip_graph,

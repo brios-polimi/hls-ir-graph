@@ -1,11 +1,14 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
+from hls_ir_graph.config import PreprocessConfig
 
 from hls_ir_graph.frontends.bambu import (
     _bambu_args,
     extract_source_directives,
 )
+from hls_ir_graph.frontends.vitis import vitis_args
 
 
 class ProjectPreprocessorTests(unittest.TestCase):
@@ -38,8 +41,22 @@ class ProjectPreprocessorTests(unittest.TestCase):
 
         self.assertIn("-D__SYNTHESIS__", args)
         self.assertIn("-D__BAMBU__", args)
-        self.assertIn("-D__NO_INLINE__", args)
+        self.assertNotIn("-D__NO_INLINE__", args)  # Clang defines this at -O0.
         self.assertTrue(any(arg.endswith("firmware/ac_types") for arg in args))
+
+    def test_vitis_uses_vendor_hls_types_and_retains_static_guard_policy(self):
+        args = vitis_args(Path('/project'), PreprocessConfig())
+        self.assertIn('-fhls', args)
+        self.assertIn('-fno-threadsafe-statics', args)
+        self.assertFalse(any('/firmware/ap_types' in a for a in args))
+        self.assertNotIn('-D__SYNTHESIS__', args)  # Provided by -fhls.
+
+    def test_removed_bambu_options_have_an_explicit_migration_error(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)/'config.json'
+            path.write_text(json.dumps({'bambu': {'architecture_xml': 'old.xml'}}))
+            with self.assertRaisesRegex(ValueError, 'debug-derived type recovery'):
+                PreprocessConfig.from_file(path)
 
 
 if __name__ == "__main__":

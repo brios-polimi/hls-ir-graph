@@ -22,6 +22,8 @@ class CompileResult:
     compiler_version: str | None = None
     known_fidelity_gap: str | None = None
     applied_transforms: tuple[dict, ...] = ()
+    type_table: Path | None = None
+    debug_llvm: Path | None = None
 
 
 class Frontend(Protocol):

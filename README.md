@@ -12,7 +12,9 @@ hls-project-to-graph PROJECT_DIR OUTPUT_DIR --backend bambu
 The initial adapters are:
 
 - **Vitis**: Vitis Clang synthesis IR and compiler-reported pragma enrichment.
-- **Bambu**: portable Clang-16 LLVM using Bambu-compatible flags. Provenance
+- **Bambu**: unoptimized Clang-16 LLVM with a debug-derived semantic type table.
+  Full template names are restored before graphing, with strict AC coverage.
+  See [debug type recovery](docs/DEBUG_TYPE_RECOVERY.md). Provenance
   explicitly records that Bambu's custom PandA plugins are not represented.
 
 ## Package structure
@@ -36,6 +38,9 @@ in provenance; see [docs/EXTENDING.md](docs/EXTENDING.md). A reproducible Bambu
 hls4ml generation and preprocessing smoke test is provided by
 `scripts/reproduce_bambu_preprocessing.sh` and documented in
 [docs/BAMBU_PREPROCESSING_SMOKE_TEST.md](docs/BAMBU_PREPROCESSING_SMOKE_TEST.md).
+Recovery from an archived hls4ml YAML/model pair is provided by
+`scripts/reproduce_bambu_hls4ml_project.sh`; see
+[docs/BAMBU_HLS4ML_RECOVERY.md](docs/BAMBU_HLS4ML_RECOVERY.md).
 
 ```bash
 PYTHONPATH=src /home/brend/anaconda3/bin/conda run -n pipeline-env \

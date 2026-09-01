@@ -46,13 +46,13 @@ def vitis_env(config: PreprocessConfig) -> dict[str, str]:
 
 def vitis_args(project_dir: Path, config: PreprocessConfig) -> list[str]:
     autopilot = Path(config.vitis.root) / "common/technology/autopilot"
+    # -fhls supplies the synthesis macros and disables exceptions. The vendor
+    # headers implement synthesis builtins; archived open-source ap_types are
+    # simulation-only and must not shadow these headers (they #error in HLS).
     return [
-        "-fhls", "-fno-exceptions", "-fno-math-errno", "-fno-threadsafe-statics",
-        "-fno-use-cxa-atexit", "-target", config.vitis.target,
-        "-D__VITIS_HLS__", "-DAESL_SYN", "-D__SYNTHESIS__", "-D__HLS_SYN__",
-        f"-I{autopilot}", f"-I{autopilot / 'ap_sysc'}",
-        f"-I{project_dir / 'firmware/ap_types'}",
-        "-include", str(autopilot / "etc/autopilot_ssdm_op.h"),
+        "-fhls", "-fno-threadsafe-statics", "-target", config.vitis.target,
+        # Unlike the other HLS macros, -fhls does not define this backend marker.
+        "-D__VITIS_HLS__", f"-I{autopilot}",
     ]
 
 
@@ -67,7 +67,7 @@ class VitisFrontend:
         config: PreprocessConfig,
     ) -> CompileResult:
         clang = Path(config.vitis.clang)
-        header = Path(config.vitis.root) / "common/technology/autopilot/etc/autopilot_ssdm_op.h"
+        header = Path(config.vitis.root) / "common/technology/autopilot/ap_fixed.h"
         if not clang.is_file():
             raise FileNotFoundError(f"Required Vitis tool not found: {clang}")
         if not header.is_file():
