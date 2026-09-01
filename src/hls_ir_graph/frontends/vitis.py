@@ -52,7 +52,7 @@ def vitis_args(project_dir: Path, config: PreprocessConfig) -> list[str]:
     return [
         "-fhls", "-fno-threadsafe-statics", "-target", config.vitis.target,
         # Unlike the other HLS macros, -fhls does not define this backend marker.
-        "-D__VITIS_HLS__", f"-I{autopilot}",
+        "-D__VITIS_HLS__", f"-I{autopilot}", f"-I{config.vitis.root}/include"
     ]
 
 
