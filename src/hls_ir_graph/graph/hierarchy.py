@@ -15,8 +15,7 @@ NODE_BLOCK = 4
 NODE_FUNCTION = 5
 FLOW_CONTROL = 0
 FLOW_BLOCK = 4
-FLOW_FUNCTION = 5
-HIERARCHY_SCHEMA_VERSION = 2
+HIERARCHY_SCHEMA_VERSION = 3
 HIERARCHY_INJECTOR = "hls_ir_graph.llvm_hierarchy"
 
 _LLVM_FUNCTION_RE = re.compile(
@@ -125,13 +124,16 @@ def add_llvm_hierarchy(
     llvm_path: str | Path,
     source_loop_labels: set[str],
 ) -> tuple[dict[tuple[int, str], dict], dict[int, dict], dict]:
-    """Add function/block nodes, membership edges, and the LLVM block CFG."""
+    """Add function/block nodes and the LLVM block CFG.
+
+    Membership is encoded by each node's ``function`` and ``block`` fields.
+    Explicit membership links are intentionally omitted as redundant.
+    """
 
     parsed = parse_llvm_hierarchy(llvm_path)
     function_records = graph.get("graph", {}).get("function", [])
     function_names = [str(item.get("name", "")).lstrip("@") for item in function_records]
 
-    instructions_by_function_block: dict[tuple[int, int], list[dict]] = defaultdict(list)
     block_order: dict[int, list[int]] = defaultdict(list)
     seen_blocks: dict[int, set[int]] = defaultdict(set)
     for node in nodes:
@@ -139,7 +141,6 @@ def add_llvm_hierarchy(
             continue
         function_id = int(node.get("function", -1))
         block_id = int(node.get("block", -1))
-        instructions_by_function_block[(function_id, block_id)].append(node)
         if block_id not in seen_blocks[function_id]:
             seen_blocks[function_id].add(block_id)
             block_order[function_id].append(block_id)
@@ -168,8 +169,6 @@ def add_llvm_hierarchy(
     mapping_failures: list[dict] = []
     mapped_functions = 0
     cfg_edges = 0
-    instruction_membership_edges = 0
-    function_membership_edges = 0
     cfg_validation_failures: list[dict] = []
 
     for function_id, symbol in enumerate(function_names):
@@ -208,22 +207,6 @@ def add_llvm_hierarchy(
             }
             nodes.append(block_node)
             block_lookup[(function_id, llvm_block.name)] = block_node
-
-            links.extend(
-                (
-                    _link(FLOW_FUNCTION, function_node["id"], block_node["id"]),
-                    _link(FLOW_FUNCTION, block_node["id"], function_node["id"]),
-                )
-            )
-            function_membership_edges += 2
-            for instruction in instructions_by_function_block[(function_id, graph_block)]:
-                links.extend(
-                    (
-                        _link(FLOW_BLOCK, block_node["id"], instruction["id"]),
-                        _link(FLOW_BLOCK, instruction["id"], block_node["id"]),
-                    )
-                )
-                instruction_membership_edges += 2
 
         for llvm_block in llvm_blocks:
             source = block_lookup[(function_id, llvm_block.name)]
@@ -288,8 +271,7 @@ def add_llvm_hierarchy(
         "function_nodes_injected": len(function_lookup),
         "block_nodes_injected": len(block_lookup),
         "functions_mapped": mapped_functions,
-        "instruction_membership_edges": instruction_membership_edges,
-        "function_membership_edges": function_membership_edges,
+        "membership_encoding": "node_fields",
         "cfg_edges": cfg_edges,
         "cfg_validation_failures": cfg_validation_failures,
         "mapping_failures": mapping_failures,

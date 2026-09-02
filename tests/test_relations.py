@@ -57,7 +57,6 @@ def test_canonical_relations_are_directional_and_endpoint_specific():
         ("argument", "operand", "call"),
         ("call", "defines", "argument"),
         ("pragma.pipeline", "applies_to", "argument"),
-        ("entry", "contains", "call"),
-        ("caller", "contains", "entry"),
         ("call", "calls", "callee"),
     }
+    assert all(edge.get("position") != 0 for edge in graph["links"])

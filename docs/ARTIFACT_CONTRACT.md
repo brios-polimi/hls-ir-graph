@@ -25,5 +25,12 @@ Bambu portable LLVM is classified `portable_clang_approximation` because PandA
 plugins such as CSROA and `dumpBambuIrSSACpp` are not applied. Vitis uses its
 backend frontend and compiler pragma dump.
 
+Hierarchy schema version 3 records ownership only in node fields: instructions
+and blocks carry `function` and `block`, while function nodes carry `function`.
+Redundant `contains` links are not serialized. Relation schema version 2 also
+omits edge `position` when its value is zero; consumers treat a missing position
+as zero. `hls-surrogate-lab` derives tensor-only containment relations from the
+node ownership fields for models that message-pass over them.
+
 Schema changes must increment the relevant version and document migration for
 `wa-hls4ml-ingest` and `hls-surrogate-lab`.

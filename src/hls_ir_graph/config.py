@@ -35,6 +35,7 @@ class PreprocessConfig:
     vitis: VitisConfig = field(default_factory=VitisConfig)
     bambu: BambuConfig = field(default_factory=BambuConfig)
     ir_transforms: list[str | dict] = field(default_factory=list)
+    retain_full_text: bool = True
 
     # Compatibility properties used by the Vitis pragma enrichment code. The
     # public configuration stays backend-scoped while this avoids duplicating
@@ -80,7 +81,7 @@ class PreprocessConfig:
         data = json.loads(Path(path).read_text())
         allowed = {
             "source_file", "compiler_timeout_seconds", "programl", "vitis",
-            "bambu", "ir_transforms",
+            "bambu", "ir_transforms", "retain_full_text",
         }
         unknown = set(data) - allowed
         if unknown:
@@ -101,6 +102,7 @@ class PreprocessConfig:
             vitis=VitisConfig(**data.get("vitis", {})),
             bambu=BambuConfig(**bambu),
             ir_transforms=data.get("ir_transforms", []),
+            retain_full_text=data.get("retain_full_text", True),
         )
 
     def to_file(self, path: str | Path) -> None:

@@ -11,7 +11,6 @@ NODE_BLOCK = 4
 NODE_FUNCTION = 5
 FLOW_CONTROL = 0
 FLOW_BLOCK = 4
-FLOW_FUNCTION = 5
 
 _NONSEMANTIC_CALL_RE = re.compile(
     r"@(?P<name>"
@@ -128,9 +127,7 @@ def prune_nonsemantic_intrinsics(graph: dict) -> dict:
             "function_nodes_removed": 0,
             "block_nodes_removed": 0,
             "control_bypass_edges_added": 0,
-            "block_membership_edges_removed": 0,
             "block_cfg_edges_removed": 0,
-            "function_membership_edges_removed": 0,
             "removed_by_kind": {},
         }
 
@@ -140,23 +137,10 @@ def prune_nonsemantic_intrinsics(graph: dict) -> dict:
         if int(link.get("flow", -1)) == FLOW_BLOCK
         and (int(link["source"]) in removed or int(link["target"]) in removed)
     ]
-    block_membership_edges_removed = sum(
-        {
-            int(node_by_id[int(link["source"])].get("type", -1)),
-            int(node_by_id[int(link["target"])].get("type", -1)),
-        }
-        == {NODE_INSTRUCTION, NODE_BLOCK}
-        for link in removed_block_links
-    )
     block_cfg_edges_removed = sum(
         int(node_by_id[int(link["source"])].get("type", -1)) == NODE_BLOCK
         and int(node_by_id[int(link["target"])].get("type", -1)) == NODE_BLOCK
         for link in removed_block_links
-    )
-    function_membership_edges_removed = sum(
-        int(link.get("flow", -1)) == FLOW_FUNCTION
-        and (int(link["source"]) in removed or int(link["target"]) in removed)
-        for link in links
     )
     function_nodes_removed = sum(
         int(node.get("type", -1)) == NODE_FUNCTION
@@ -244,8 +228,6 @@ def prune_nonsemantic_intrinsics(graph: dict) -> dict:
         "function_nodes_removed": function_nodes_removed,
         "block_nodes_removed": block_nodes_removed,
         "control_bypass_edges_added": bypass_added,
-        "block_membership_edges_removed": block_membership_edges_removed,
         "block_cfg_edges_removed": block_cfg_edges_removed,
-        "function_membership_edges_removed": function_membership_edges_removed,
         "removed_by_kind": dict(Counter(removed_reasons.values())),
     }

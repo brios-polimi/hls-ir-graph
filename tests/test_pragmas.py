@@ -158,13 +158,20 @@ inner.cond:
 
             reuse = block_nodes["ReuseLoop"]
             reuse_members = {
+                node["id"]
+                for node in injected["nodes"]
+                if node["type"] == 0
+                and node["function"] == reuse["function"]
+                and node["block"] == reuse["block"]
+            }
+            reuse_successors = {
                 link["target"]
                 for link in injected["links"]
                 if link["source"] == reuse["id"]
-                and link["relation"] in {"contains", "control"}
+                and link["relation"] == "control"
             }
             self.assertIn(1, reuse_members)
-            self.assertIn(block_nodes["for.cond"]["id"], reuse_members)
+            self.assertIn(block_nodes["for.cond"]["id"], reuse_successors)
 
             # Block and pragma enrichment remains idempotent.
             inject_vitis_pragmas(

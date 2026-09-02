@@ -73,3 +73,12 @@ loop:
 
         assert stats["cfg_edges"] == 1
         assert stats["cfg_validation_failures"] == []
+        assert stats["schema_version"] == 3
+        assert stats["membership_encoding"] == "node_fields"
+        assert all(
+            not (
+                {nodes[edge["source"]]["type"], nodes[edge["target"]]["type"]}
+                in ({0, 4}, {4, 5})
+            )
+            for edge in links
+        )

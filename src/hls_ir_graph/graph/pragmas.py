@@ -839,12 +839,11 @@ def inject_vitis_pragmas(
     block_lookup: dict[tuple[int, str], dict] = {}
     function_lookup: dict[int, dict] = {}
     hierarchy_stats = {
-        "schema_version": 2,
+        "schema_version": 3,
         "function_nodes_injected": 0,
         "block_nodes_injected": 0,
         "functions_mapped": 0,
-        "instruction_membership_edges": 0,
-        "function_membership_edges": 0,
+        "membership_encoding": "node_fields",
         "cfg_edges": 0,
         "cfg_validation_failures": [],
         "mapping_failures": [],
@@ -1023,12 +1022,6 @@ def inject_vitis_pragmas(
     from .intrinsics import prune_nonsemantic_intrinsics
 
     intrinsic_pruning = prune_nonsemantic_intrinsics(graph)
-    hierarchy_stats["instruction_membership_edges"] -= intrinsic_pruning[
-        "block_membership_edges_removed"
-    ]
-    hierarchy_stats["function_membership_edges"] -= intrinsic_pruning[
-        "function_membership_edges_removed"
-    ]
     hierarchy_stats["function_nodes_injected"] -= intrinsic_pruning[
         "function_nodes_removed"
     ]
@@ -1058,6 +1051,12 @@ def inject_vitis_pragmas(
     relation_stats = canonicalize_relations(graph)
     if label is not None:
         graph["labels"] = label
+    from .storage import compact_vitis_graph
+
+    storage_stats = compact_vitis_graph(
+        graph,
+        retain_full_text=cfg is None or cfg.retain_full_text,
+    )
     _dump_graph_json(graph_path, graph)
     return {
         "pragma_dump_records": len(records),
@@ -1072,6 +1071,7 @@ def inject_vitis_pragmas(
         "intrinsic_nodes_pruned": intrinsic_pruning["nodes_removed"],
         "canonical_relations": sum(relation_stats["relations"].values()),
         "loop_scope_nodes": loop_scope_nodes,
+        "full_text_fields_removed": storage_stats["full_text_fields_removed"],
     }
 
 

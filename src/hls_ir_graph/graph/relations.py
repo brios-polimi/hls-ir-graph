@@ -17,9 +17,8 @@ FLOW_DATA = 1
 FLOW_CALL = 2
 FLOW_PRAGMA = 3
 FLOW_BLOCK = 4
-FLOW_FUNCTION = 5
 
-RELATION_SCHEMA_VERSION = 1
+RELATION_SCHEMA_VERSION = 2
 
 
 def _relation(flow: int, source_type: int, target_type: int) -> str | None:
@@ -38,14 +37,7 @@ def _relation(flow: int, source_type: int, target_type: int) -> str | None:
     if flow == FLOW_BLOCK:
         if source_type == NODE_BLOCK and target_type == NODE_BLOCK:
             return "control"
-        if source_type == NODE_BLOCK and target_type == NODE_INSTRUCTION:
-            return "contains"
-        # instruction -> block is the redundant reverse membership edge.
-        return None
-    if flow == FLOW_FUNCTION:
-        if source_type == NODE_FUNCTION and target_type == NODE_BLOCK:
-            return "contains"
-        # block -> function is the redundant reverse membership edge.
+        # Block membership is encoded in node function/block fields.
         return None
     return None
 
@@ -55,8 +47,8 @@ def canonicalize_relations(graph: dict) -> dict:
 
     Calls become ``instruction -> function`` rather than ProGraML's pair of
     call/return edges between arbitrary entry, exit, and call instructions.
-    Hierarchy membership is stored parent-to-child once; reverse relations can
-    be derived by consumers that need them.
+    Hierarchy membership is stored in node fields; tensor consumers derive the
+    containment relations they need. Default edge positions are omitted.
     """
 
     nodes = graph.get("nodes", [])
@@ -76,14 +68,10 @@ def canonicalize_relations(graph: dict) -> dict:
         if key in seen:
             return
         seen.add(key)
-        canonical.append(
-            {
-                "source": source,
-                "target": target,
-                "relation": relation,
-                "position": position,
-            }
-        )
+        edge = {"source": source, "target": target, "relation": relation}
+        if position:
+            edge["position"] = position
+        canonical.append(edge)
 
     # Convert every non-call relation from its endpoint types.
     for link in links:
