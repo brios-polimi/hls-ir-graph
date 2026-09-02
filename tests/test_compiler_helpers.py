@@ -1,6 +1,8 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from hls_ir_graph.frontends.common import (
     _collapse_static_initializers,
@@ -9,7 +11,11 @@ from hls_ir_graph.frontends.common import (
     _remove_generated_weight_initializers,
     _strip_nonsemantic_metadata,
 )
-from hls_ir_graph.frontends.vitis import _remove_unsupported_resource_pragmas
+from hls_ir_graph.frontends.vitis import (
+    _prepare_vitis_preprocessed,
+    _remove_unsupported_resource_pragmas,
+    _vitis_compiler_version,
+)
 
 
 class CompilerHelperTests(unittest.TestCase):
@@ -65,6 +71,38 @@ class CompilerHelperTests(unittest.TestCase):
         self.assertIn("weight2_t w2[3];", cleaned)
         self.assertIn("scale_t s2[2];", cleaned)
         self.assertIn("int lookup[2] = {4, 5};", cleaned)
+
+    def test_combined_vitis_cleanup_reads_and_writes_one_artifact(self):
+        source = (
+            "#pragma HLS RESOURCE variable=w core=ROM_nP_BRAM\n"
+            '# 1 "/project/firmware/weights/w2.h" 1\n'
+            "weight2_t w2[2] = {1.0, 2.0};\n"
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "source.pp.cpp"
+            path.write_text(source)
+            self.assertEqual(_prepare_vitis_preprocessed(path), (1, 1))
+            cleaned = path.read_text()
+        self.assertNotIn("ROM_nP_BRAM", cleaned)
+        self.assertIn("weight2_t w2[2];", cleaned)
+
+    def test_vitis_version_probe_uses_runtime_environment_and_is_cached(self):
+        _vitis_compiler_version.cache_clear()
+        result = SimpleNamespace(stdout="AMD/Xilinx clang version 16.0.6\n")
+        with patch(
+            "hls_ir_graph.frontends.vitis.subprocess.run", return_value=result
+        ) as run:
+            first = _vitis_compiler_version("/tools/clang", "/opt/Vitis")
+            second = _vitis_compiler_version("/tools/clang", "/opt/Vitis")
+        self.assertEqual(first, "AMD/Xilinx clang version 16.0.6")
+        self.assertEqual(second, first)
+        self.assertEqual(run.call_count, 1)
+        self.assertTrue(
+            run.call_args.kwargs["env"]["LD_LIBRARY_PATH"].startswith(
+                "/opt/Vitis/lib/lnx64.o"
+            )
+        )
+        _vitis_compiler_version.cache_clear()
 
     def test_strips_metadata_but_keeps_instruction(self):
         ir = "  %1 = add i32 %a, %b, !dbg !12\n!12 = !{}\n"

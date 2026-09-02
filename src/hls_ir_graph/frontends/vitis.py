@@ -6,13 +6,14 @@ import os
 import re
 import subprocess
 import tempfile
+from functools import lru_cache
 from pathlib import Path
 
 from ..config import PreprocessConfig
 from .base import CompileResult
 from .common import (
     collapse_static_initializers,
-    remove_generated_weight_initializers,
+    remove_generated_weight_initializers_text,
     run_command,
     strip_nonsemantic_metadata,
 )
@@ -26,13 +27,45 @@ _UNSUPPORTED_RESOURCE_PRAGMA = re.compile(
 
 def remove_unsupported_resource_pragmas(preprocessed: Path) -> int:
     text = preprocessed.read_text()
-    clean, count = _UNSUPPORTED_RESOURCE_PRAGMA.subn(
-        lambda match: "\r\n" if match.group(0).endswith("\r\n") else "\n",
-        text,
-    )
+    clean, count = remove_unsupported_resource_pragmas_text(text)
     if count:
         preprocessed.write_text(clean)
     return count
+
+
+def remove_unsupported_resource_pragmas_text(text: str) -> tuple[str, int]:
+    return _UNSUPPORTED_RESOURCE_PRAGMA.subn(
+        lambda match: "\r\n" if match.group(0).endswith("\r\n") else "\n",
+        text,
+    )
+
+
+def prepare_vitis_preprocessed(preprocessed: Path) -> tuple[int, int]:
+    """Apply Vitis source cleanups with one file read and at most one write."""
+
+    text = preprocessed.read_text()
+    clean, resource_count = remove_unsupported_resource_pragmas_text(text)
+    clean, weight_count = remove_generated_weight_initializers_text(clean)
+    if resource_count or weight_count:
+        preprocessed.write_text(clean)
+    return resource_count, weight_count
+
+
+@lru_cache(maxsize=None)
+def vitis_compiler_version(clang: str, vitis_root: str) -> str | None:
+    env = os.environ.copy()
+    library_dir = Path(vitis_root) / "lib/lnx64.o"
+    env["LD_LIBRARY_PATH"] = ":".join(
+        item for item in (str(library_dir), env.get("LD_LIBRARY_PATH", "")) if item
+    )
+    output = subprocess.run(
+        [clang, "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    ).stdout.splitlines()
+    return output[0] if output else None
 
 
 def vitis_env(config: PreprocessConfig) -> dict[str, str]:
@@ -83,8 +116,7 @@ class VitisFrontend:
             preprocess = [str(clang), str(source), "-E", "-std=c++0x", *args, "-o", str(preprocessed)]
             commands.append(tuple(preprocess))
             run_command(preprocess, cwd=project_dir, env=env, timeout=config.compiler_timeout_seconds, stage="Vitis preprocessing")
-            remove_unsupported_resource_pragmas(preprocessed)
-            remove_generated_weight_initializers(preprocessed)
+            prepare_vitis_preprocessed(preprocessed)
             compile_command = [
                 str(clang), str(preprocessed), "-S", "-emit-llvm", "-Wpragmas",
                 "-Wdump-hls-pragmas", "-Wno-error=dump-hls-pragmas", *args,
@@ -99,13 +131,15 @@ class VitisFrontend:
             ir = raw_ll.read_text().replace("llvm.fpga.", "vitis.fpga.")
             llvm_path.write_text(strip_nonsemantic_metadata(collapse_static_initializers(ir)))
 
-        version = subprocess.run([str(clang), "--version"], capture_output=True, text=True, check=False).stdout.splitlines()
         return CompileResult(
             llvm_path, directives_path, compiler_log, tuple(commands),
-            "compiler_reported", "backend_frontend", version[0] if version else None,
+            "compiler_reported", "backend_frontend",
+            vitis_compiler_version(str(clang), config.vitis.root),
         )
 
 
 _remove_unsupported_resource_pragmas = remove_unsupported_resource_pragmas
+_prepare_vitis_preprocessed = prepare_vitis_preprocessed
 _vitis_env = vitis_env
 _vitis_args = vitis_args
+_vitis_compiler_version = vitis_compiler_version

@@ -43,7 +43,22 @@ def remove_generated_weight_initializers(
     preprocessed: Path, *, weight_names: set[str] | None = None
 ) -> int:
     text = preprocessed.read_text()
+    clean, count = remove_generated_weight_initializers_text(
+        text, weight_names=weight_names
+    )
+    if count:
+        preprocessed.write_text(clean)
+    return count
+
+
+def remove_generated_weight_initializers_text(
+    text: str, *, weight_names: set[str] | None = None
+) -> tuple[str, int]:
+    """Return preprocessed source with generated weight values removed."""
+
     markers = list(_LINE_MARKER.finditer(text))
+    if not markers:
+        return text, 0
     pieces: list[str] = []
     cursor = 0
     count = 0
@@ -65,9 +80,7 @@ def remove_generated_weight_initializers(
             count += removed
         pieces.append(segment)
         cursor = end
-    if count:
-        preprocessed.write_text("".join(pieces))
-    return count
+    return "".join(pieces), count
 
 
 def compact_zero_weight_initializers(ir: str, weight_names: set[str]) -> str:

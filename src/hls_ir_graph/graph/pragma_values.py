@@ -10,9 +10,8 @@ import re
 import subprocess
 import tempfile
 
-from ..frontends.common import _remove_generated_weight_initializers
 from ..frontends.vitis import (
-    _remove_unsupported_resource_pragmas,
+    _prepare_vitis_preprocessed,
     _vitis_args,
     _vitis_env,
 )
@@ -235,8 +234,7 @@ def _compile_requests(
                 "pragma value preprocessing failed: "
                 + " ".join(preprocess.stderr.strip().split())[-1000:]
             )
-        _remove_unsupported_resource_pragmas(preprocessed)
-        _remove_generated_weight_initializers(preprocessed)
+        _prepare_vitis_preprocessed(preprocessed)
 
         compile_result = subprocess.run(
             [
